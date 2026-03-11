@@ -1,0 +1,22 @@
+# --- Carpetas de PyInstaller (Compilación local) ---
+build/
+dist/
+*.spec
+
+# --- Entornos Virtuales y Python ---
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# --- Archivos de Salida (Reportes generados) ---
+*.xlsx
+*.csv
+
+# --- Archivos de VS Code ---
+.vscode/
+
+# --- Imágenes o Recursos Temporales ---
+*.png
+*.jpg
+*.ico
