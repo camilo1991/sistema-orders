@@ -10,10 +10,28 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 st.set_page_config(page_title="Audifarma Report Manager", page_icon="📦", layout="wide")
 
 # Estilo para mejorar la visualización en la web
+# --- BLOQUE DE DISEÑO CORREGIDO PARA VISIBILIDAD ---
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    [data-testid="stMetric"] { background-color: #ffffff; border: 1px solid #ddd; padding: 10px; border-radius: 5px; }
+    /* Fondo de la métrica */
+    [data-testid="stMetric"] {
+        background-color: #ffffff !important;
+        border: 1px solid #e6e9ef !important;
+        padding: 15px !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+    }
+    /* Color del Título de la métrica (ej. "Venta Total") */
+    [data-testid="stMetricLabel"] {
+        color: #555555 !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+    }
+    /* Color del Número/Valor (ej. "$30,586,600") */
+    [data-testid="stMetricValue"] {
+        color: #1a1a1a !important;
+        font-weight: bold !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
