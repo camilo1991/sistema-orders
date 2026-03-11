@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from io import BytesIO
 
 # Configuración de Seguridad y Página
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+urllib3.disable_warnings(urllib3.exceptions.Insecure_requestWarning)
 st.set_page_config(page_title="Magento Report Manager Pro", page_icon="📦", layout="wide")
 
 # --- BLOQUE DE DISEÑO PARA MODO OSCURO ---
@@ -25,6 +25,7 @@ st.markdown("""
 
 BASE_URL = "https://www.audifarmadroguerias.com/rest/V1"
 
+# --- FUNCIONES TÉCNICAS ---
 def obtener_token(usuario, clave):
     auth_url = f"{BASE_URL}/integration/admin/token"
     payload = {"username": usuario, "password": clave}
@@ -50,10 +51,15 @@ def fetch_magento_data(token, f_inicio, f_fin):
     response.raise_for_status()
     return response.json().get('items', [])
 
-# --- INTERFAZ (SIDEBAR) ---
+# --- INTERFAZ (SIDEBAR) CON SECRETS ---
 st.sidebar.title("🔐 Acceso Magento")
-user = st.sidebar.text_input("Usuario", value="andrey.pena")
-password = st.sidebar.text_input("Contraseña", type="password")
+
+# Intentar obtener credenciales desde Streamlit Secrets
+user_secret = st.secrets.get("USUARIO_MAGENTO", "andrey.pena")
+pass_secret = st.secrets.get("CLAVE_MAGENTO", "")
+
+user = st.sidebar.text_input("Usuario", value=user_secret)
+password = st.sidebar.text_input("Contraseña", value=pass_secret, type="password")
 
 st.sidebar.divider()
 st.sidebar.title("📅 Filtros de Fecha (Local)")
@@ -64,6 +70,7 @@ h_inicio = col_f1.time_input("Hora Ini", datetime.time(datetime(2024,1,1,0,0,0))
 d_fin = col_f2.date_input("Fin", datetime.now())
 h_fin = col_f2.time_input("Hora Fin", datetime.time(datetime(2024,1,1,23,59,59)))
 
+# Ajuste de zona horaria UTC (Bogotá UTC-5)
 dt_inicio_local = datetime.combine(d_inicio, h_inicio)
 dt_fin_local = datetime.combine(d_fin, h_fin)
 fecha_inicio_utc = (dt_inicio_local + timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
@@ -75,17 +82,17 @@ st.title("📦 Reporte de Órdenes Audifarma")
 
 if btn_consultar:
     if not user or not password:
-        st.error("Ingresa credenciales.")
+        st.error("Por favor, ingresa las credenciales.")
     else:
-        with st.spinner("Conectando con servidor..."):
+        with st.spinner("Conectando con Magento..."):
             token = obtener_token(user, password)
             if not token:
-                st.error("Error de autenticación.")
+                st.error("Error de autenticación. Verifica usuario/clave.")
             else:
                 try:
                     orders = fetch_magento_data(token, fecha_inicio_utc, fecha_fin_utc)
                     if not orders:
-                        st.warning("No hay órdenes en este rango.")
+                        st.warning("No se encontraron órdenes en este rango.")
                     else:
                         reporte = []
                         for o in orders:
@@ -95,6 +102,7 @@ if btn_consultar:
                             billing = o.get('billing_address', {})
                             direccion = billing.get('street', [''])[0] if billing.get('street') else ''
                             
+                            # Datos base de la orden
                             base = {
                                 "Id": o['increment_id'],
                                 "Fecha Compra": dt_local.strftime('%Y-%m-%d'),
@@ -112,34 +120,41 @@ if btn_consultar:
                             for item in o['items']:
                                 if item.get('product_type') == 'simple' or 'parent_item' not in item:
                                     fila = base.copy()
-                                    # --- NUEVOS CAMPOS AÑADIDOS ---
-                                    precio_unitario = float(item.get('price', 0))
+                                    p_unitario = float(item.get('price', 0))
                                     cantidad = float(item.get('qty_ordered', 0))
                                     
                                     fila.update({
                                         "SKU": item['sku'],
                                         "Nombre del producto": item['name'],
                                         "Cantidad comprada": cantidad,
-                                        "Precio Unitario": precio_unitario,
-                                        "Subtotal Producto": cantidad * precio_unitario
+                                        "Precio Unitario": p_unitario,
+                                        "Subtotal Producto": cantidad * p_unitario
                                     })
                                     reporte.append(fila)
 
                         df = pd.DataFrame(reporte)
 
-                        # Reordenar columnas incluyendo el Precio Unitario
-                        columnas_orden = [
+                        # Orden exacto de columnas solicitado
+                        columnas_finales = [
                             "Id", "Fecha Compra", "Nombre del cliente", "Ciudad", "Departamento", 
                             "Dirección", "Correo electrónico", "Teléfono", "SKU", 
                             "Nombre del producto", "Cantidad comprada", "Precio Unitario", 
                             "Subtotal Producto", "Valor del domicilio", 
                             "Valor total de la compra", "Estado de la compra"
                         ]
-                        df = df[columnas_orden]
+                        df = df[columnas_finales]
+
+                        # --- MÉTRICAS ---
+                        m1, m2, m3, m4 = st.columns(4)
+                        m1.metric("Órdenes", df['Id'].nunique())
+                        m2.metric("Total Items", int(df['Cantidad comprada'].sum()))
+                        m3.metric("Recaudo Total", f"${df['Valor total de la compra'].unique().astype(float).sum():,.0f}")
+                        m4.metric("Total Domicilios", f"${df['Valor del domicilio'].unique().astype(float).sum():,.0f}")
 
                         st.divider()
                         st.dataframe(df, use_container_width=True)
 
+                        # Preparar descarga Excel
                         output = BytesIO()
                         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                             df.to_excel(writer, index=False, sheet_name='Reporte Magento')
