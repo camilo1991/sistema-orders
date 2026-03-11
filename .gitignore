@@ -20,3 +20,5 @@ env/
 *.png
 *.jpg
 *.ico
+
+*.run_magento.py
