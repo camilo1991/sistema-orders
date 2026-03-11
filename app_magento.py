@@ -6,20 +6,14 @@ from datetime import datetime, timedelta
 from io import BytesIO
 
 # Configuración de Seguridad y Página
-urllib3.disable_warnings(urllib3.exceptions.Insecure_requestWarning)
-st.set_page_config(page_title="Magento Report Manager Pro", page_icon="📦", layout="wide")
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+st.set_page_config(page_title="Audifarma Report Manager", page_icon="📦", layout="wide")
 
-# --- BLOQUE DE DISEÑO PARA MODO OSCURO ---
+# Estilo para mejorar la visualización en la web
 st.markdown("""
     <style>
-    [data-testid="stMetricValue"] { color: #1f1f1f !important; font-weight: bold !important; }
-    [data-testid="stMetricLabel"] { color: #555555 !important; }
-    [data-testid="stMetric"] {
-        background-color: #f0f2f6 !important;
-        padding: 15px !important;
-        border-radius: 10px !important;
-        border: 1px solid #d1d1d1 !important;
-    }
+    .main { background-color: #f8f9fa; }
+    [data-testid="stMetric"] { background-color: #ffffff; border: 1px solid #ddd; padding: 10px; border-radius: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -45,64 +39,54 @@ def fetch_magento_data(token, f_inicio, f_fin):
         f"searchCriteria[filter_groups][1][filters][0][field]=created_at&"
         f"searchCriteria[filter_groups][1][filters][0][value]={f_fin}&"
         f"searchCriteria[filter_groups][1][filters][0][condition_type]=lteq&"
-        f"searchCriteria[pageSize]=1000"
+        f"searchCriteria[pageSize]=1500"
     )
-    response = requests.get(f"{BASE_URL}/orders{params}", headers=headers, verify=False, timeout=20)
+    response = requests.get(f"{BASE_URL}/orders{params}", headers=headers, verify=False, timeout=25)
     response.raise_for_status()
     return response.json().get('items', [])
 
-# --- INTERFAZ (SIDEBAR) CON SECRETS ---
-st.sidebar.title("🔐 Acceso Magento")
-
-# Intentar obtener credenciales desde Streamlit Secrets
-user_secret = st.secrets.get("USUARIO_MAGENTO", "andrey.pena")
-pass_secret = st.secrets.get("CLAVE_MAGENTO", "")
-
-user = st.sidebar.text_input("Usuario", value=user_secret)
-password = st.sidebar.text_input("Contraseña", value=pass_secret, type="password")
+# --- INTERFAZ DE USUARIO (SIDEBAR) ---
+st.sidebar.title("🔐 Acceso Seguro")
+user = st.sidebar.text_input("Usuario Magento", value="")
+password = st.sidebar.text_input("Contraseña", value="", type="password")
 
 st.sidebar.divider()
-st.sidebar.title("📅 Filtros de Fecha (Local)")
-col_f1, col_f2 = st.sidebar.columns(2)
-d_inicio = col_f1.date_input("Inicio", datetime.now())
-h_inicio = col_f1.time_input("Hora Ini", datetime.time(datetime(2024,1,1,0,0,0)))
-
-d_fin = col_f2.date_input("Fin", datetime.now())
-h_fin = col_f2.time_input("Hora Fin", datetime.time(datetime(2024,1,1,23,59,59)))
+st.sidebar.title("📅 Rango de Fechas")
+d_inicio = st.sidebar.date_input("Desde", datetime.now())
+d_fin = st.sidebar.date_input("Hasta", datetime.now())
 
 # Ajuste de zona horaria UTC (Bogotá UTC-5)
-dt_inicio_local = datetime.combine(d_inicio, h_inicio)
-dt_fin_local = datetime.combine(d_fin, h_fin)
-fecha_inicio_utc = (dt_inicio_local + timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
-fecha_fin_utc = (dt_fin_local + timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+dt_inicio_utc = (datetime.combine(d_inicio, datetime.min.time()) + timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+dt_fin_utc = (datetime.combine(d_fin, datetime.max.time()) + timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
 
-btn_consultar = st.sidebar.button("🚀 Ejecutar Reporte", use_container_width=True)
+btn_consultar = st.sidebar.button("🚀 Generar Reporte", use_container_width=True)
 
-st.title("📦 Reporte de Órdenes Audifarma")
+# --- CUERPO PRINCIPAL ---
+st.title("📦 Sistema de Órdenes Audifarma")
+st.info("Ingresa tus credenciales y selecciona las fechas para extraer el reporte detallado.")
 
 if btn_consultar:
     if not user or not password:
-        st.error("Por favor, ingresa las credenciales.")
+        st.warning("⚠️ Se requieren credenciales para acceder a la API de Magento.")
     else:
-        with st.spinner("Conectando con Magento..."):
+        with st.spinner("Conectando con el servidor..."):
             token = obtener_token(user, password)
             if not token:
-                st.error("Error de autenticación. Verifica usuario/clave.")
+                st.error("❌ Error de autenticación. Verifica tus datos de acceso.")
             else:
                 try:
-                    orders = fetch_magento_data(token, fecha_inicio_utc, fecha_fin_utc)
+                    orders = fetch_magento_data(token, dt_inicio_utc, dt_fin_utc)
                     if not orders:
-                        st.warning("No se encontraron órdenes en este rango.")
+                        st.info("No se encontraron órdenes para este periodo.")
                     else:
                         reporte = []
                         for o in orders:
-                            dt_utc = datetime.strptime(o['created_at'], '%Y-%m-%d %H:%M:%S')
-                            dt_local = dt_utc - timedelta(hours=5)
+                            # Ajuste de fecha para visualización local
+                            dt_local = datetime.strptime(o['created_at'], '%Y-%m-%d %H:%M:%S') - timedelta(hours=5)
                             
                             billing = o.get('billing_address', {})
                             direccion = billing.get('street', [''])[0] if billing.get('street') else ''
                             
-                            # Datos base de la orden
                             base = {
                                 "Id": o['increment_id'],
                                 "Fecha Compra": dt_local.strftime('%Y-%m-%d'),
@@ -112,8 +96,8 @@ if btn_consultar:
                                 "Dirección": direccion,
                                 "Correo electrónico": o.get('customer_email'),
                                 "Teléfono": billing.get('telephone'),
-                                "Valor del domicilio": o.get('shipping_amount'),
-                                "Valor total de la compra": o.get('grand_total'),
+                                "Valor del domicilio": float(o.get('shipping_amount', 0)),
+                                "Valor total de la compra": float(o.get('grand_total', 0)),
                                 "Estado de la compra": o.get('status')
                             }
 
@@ -122,7 +106,6 @@ if btn_consultar:
                                     fila = base.copy()
                                     p_unitario = float(item.get('price', 0))
                                     cantidad = float(item.get('qty_ordered', 0))
-                                    
                                     fila.update({
                                         "SKU": item['sku'],
                                         "Nombre del producto": item['name'],
@@ -133,39 +116,40 @@ if btn_consultar:
                                     reporte.append(fila)
 
                         df = pd.DataFrame(reporte)
-
-                        # Orden exacto de columnas solicitado
-                        columnas_finales = [
+                        
+                        # Orden oficial de las 14+ columnas
+                        cols_finales = [
                             "Id", "Fecha Compra", "Nombre del cliente", "Ciudad", "Departamento", 
                             "Dirección", "Correo electrónico", "Teléfono", "SKU", 
                             "Nombre del producto", "Cantidad comprada", "Precio Unitario", 
                             "Subtotal Producto", "Valor del domicilio", 
                             "Valor total de la compra", "Estado de la compra"
                         ]
-                        df = df[columnas_finales]
+                        df = df[cols_finales]
 
-                        # --- MÉTRICAS ---
-                        m1, m2, m3, m4 = st.columns(4)
-                        m1.metric("Órdenes", df['Id'].nunique())
-                        m2.metric("Total Items", int(df['Cantidad comprada'].sum()))
-                        m3.metric("Recaudo Total", f"${df['Valor total de la compra'].unique().astype(float).sum():,.0f}")
-                        m4.metric("Total Domicilios", f"${df['Valor del domicilio'].unique().astype(float).sum():,.0f}")
+                        # Métricas rápidas
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Órdenes Únicas", df['Id'].nunique())
+                        c2.metric("Total Productos", int(df['Cantidad comprada'].sum()))
+                        c3.metric("Venta Total", f"${df['Valor total de la compra'].unique().sum():,.0f}")
 
                         st.divider()
                         st.dataframe(df, use_container_width=True)
 
-                        # Preparar descarga Excel
+                        # --- LÓGICA DE DESCARGA EXCEL (CORREGIDA) ---
                         output = BytesIO()
+                        # Es vital usar xlsxwriter para que el formato sea nativo de Excel
                         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                            df.to_excel(writer, index=False, sheet_name='Reporte Magento')
+                            df.to_excel(writer, index=False, sheet_name='Reporte_Magento')
                         
+                        processed_data = output.getvalue()
+
                         st.download_button(
-                            label="📥 Descargar Reporte Excel Completo",
-                            data=output.getvalue(),
-                            file_name=f"Reporte_Audifarma_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            label="📥 Descargar Reporte en Excel (.xlsx)",
+                            data=processed_data,
+                            file_name=f"Reporte_Magento_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
                         )
                 except Exception as e:
-                    st.error(f"Error procesando datos: {e}")
-else:
-    st.info("Configura los filtros y presiona 'Ejecutar Reporte'.")
+                    st.error(f"Error en el procesamiento: {e}")
